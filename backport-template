@@ -1,0 +1,49 @@
+#!/bin/bash
+
+set -e
+
+function usage() {
+  echo "This tool prepares backport PR from given template one."
+  echo
+  echo "Usage: "
+  echo "$(basename "$0") <base-repo> <template-pr-nr> <base-branch>"
+}
+
+if ! [ -x "$(command -v gh)" ]; then
+  echo "Error: 'gh' tool required - https://cli.github.com/"
+  exit 2
+fi
+
+if ! [ -x "$(command -v jq)" ]; then
+  echo "Error: 'jq' tool required - https://jqlang.github.io/jq/download/"
+  exit 2
+fi
+
+if [[ $# -ne 3 ]]; then
+  usage
+  exit 1
+fi
+
+REPO_UPSTREAM=$1
+ORIGINAL_PR_NUMBER=$2
+BASE_BRANCH=$3
+
+ORIGINAL_PR_URL="https://github.com/${REPO_UPSTREAM}/pull/${ORIGINAL_PR_NUMBER}"
+#  --reviewer flag doesn't work with --web
+#  REVIEWERS=$(gh api repos/$REPO_UPSTREAM/pulls/$ORIGINAL_PR_NUMBER/reviews | jq '.[] | select(.state == "APPROVED") | .user.login' | jq -c -r -s '. | unique | join(",")')
+#  if [ -n "$REVIEWERS" ]; then
+#    REVIEWERS_ARG="--reviewer $REVIEWERS"
+#  fi
+
+#set -x
+
+PR_JSON=$(gh api repos/$REPO_UPSTREAM/pulls/$ORIGINAL_PR_NUMBER)
+PR_BODY=$(jq -r '"\n\n" + .body' <<< ${PR_JSON})
+PR_TITLE=$(jq -r '.title' <<< ${PR_JSON})
+PR_LABELS=$(jq '.labels[].name' <<< ${PR_JSON} | jq -c -r -s '. | join(",")')
+
+echo "Creating new PR..."
+gh pr create --base "$BASE_BRANCH" --title "$PR_TITLE [$BASE_BRANCH]" \
+  --body "Backport of $ORIGINAL_PR_URL$(echo -e "\n\n")$PR_BODY" \
+  --milestone "$BASE_BRANCH" \
+  --assignee "@me" $REVIEWERS_ARG --label "$PR_LABELS,Backport" --web
